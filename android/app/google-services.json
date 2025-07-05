@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "502945722675",
+    "project_id": "expensetracker-sk",
+    "storage_bucket": "expensetracker-sk.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:502945722675:android:8222965edf6cbaa9644e46",
+        "android_client_info": {
+          "package_name": "com.example.expensetracker"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "502945722675-l9cvit9fq22vecrv7vlpg1nj5n6c8lqu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.expensetracker",
+            "certificate_hash": "5da7c6fab10438ae9a2e9dbfdf6de821f5a14c3e"
+          }
+        },
+        {
+          "client_id": "502945722675-vv3fst500ffg980deldrnti4bhpjb3vn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyChAv67ZkmOPh7Hw4fXVc5bb5RK_clqnAI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "502945722675-vv3fst500ffg980deldrnti4bhpjb3vn.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "502945722675-alfesfo7oef28a9brqoj0v6c5fattq0v.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.expensetracker"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
