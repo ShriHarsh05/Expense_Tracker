@@ -3,7 +3,7 @@ name: Build Flutter APK
 on:
   push:
     branches:
-      - main  # or change to your working branch
+      - main  # or any branch you want
 
 jobs:
   build:
@@ -16,19 +16,19 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.5'
+          flutter-version: '3.22.5'  # ✅ DO NOT add `channel`, `architecture`, etc.
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Clean previous builds
+      - name: Clean build artifacts
         run: flutter clean
 
-      - name: Build APK (Release, split per ABI)
+      - name: Build release APK (split per ABI)
         run: flutter build apk --release --split-per-abi
 
-      - name: Upload APKs as build artifacts
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: split-apk-release
+          name: release-apks
           path: build/app/outputs/flutter-apk/*.apk
