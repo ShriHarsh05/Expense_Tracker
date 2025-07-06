@@ -1,34 +1,39 @@
-name: Build Flutter APK
+name: Build My App
 
 on:
   push:
     branches:
-      - main  # or any branch you want
+      - main
 
 jobs:
   build:
+    name: Build and Release new apk
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source code
+      - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Set up Java
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'zulu'
+          java-version: '11'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.5'  # ✅ DO NOT add `channel`, `architecture`, etc.
+          flutter-version: '3.22.5'  # ✅ Use exact version; DO NOT use `channel`
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Clean build artifacts
-        run: flutter clean
-
-      - name: Build release APK (split per ABI)
+      - name: Build APK (release)
         run: flutter build apk --release --split-per-abi
 
-      - name: Upload APKs
-        uses: actions/upload-artifact@v4
+      - name: Upload APK to GitHub Release
+        uses: ncipollo/release-action@v1
         with:
-          name: release-apks
-          path: build/app/outputs/flutter-apk/*.apk
+          artifacts: "build/app/outputs/flutter-apk/app-*.apk"
+          tag: v0.0.1
+          token: ${{ secrets.TOKEN }}
