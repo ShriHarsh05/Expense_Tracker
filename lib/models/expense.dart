@@ -28,6 +28,9 @@ class Expense {
     required this.date,
     required this.category,
     String? id,
+    this.needsUserInput = false,
+    this.originalSms,
+    this.isLearning = false,
   }) : id = id ?? uuid.v4();
 
   final String id;
@@ -35,6 +38,9 @@ class Expense {
   final double amount;
   final DateTime date;
   final Category category;
+  final bool needsUserInput; // 🧠 Flag for learning system
+  final String? originalSms; // 📱 Original SMS for learning
+  final bool isLearning; // 🎯 Learning flag
 
   String get formattedDate {
     return formatter.format(date);
@@ -42,13 +48,20 @@ class Expense {
 
   /// 🔹 Convert Expense object to Firestore-friendly Map
   Map<String, dynamic> toMap() {
-    return {
+    final map = {
       'id': id,
       'title': title,
       'amount': amount,
       'date': date.toIso8601String(),
       'category': category.name,
     };
+    
+    // Add learning fields if present
+    if (needsUserInput) map['needsUserInput'] = needsUserInput;
+    if (originalSms != null) map['originalSms'] = originalSms!;
+    if (isLearning) map['isLearning'] = isLearning;
+    
+    return map;
   }
 
   /// 🔹 Factory constructor to create Expense from Firestore data
@@ -62,6 +75,9 @@ class Expense {
         (c) => c.name == map['category'],
         orElse: () => Category.Miscellaneous,
       ),
+      needsUserInput: map['needsUserInput'] ?? false,
+      originalSms: map['originalSms'],
+      isLearning: map['isLearning'] ?? false,
     );
   }
 }

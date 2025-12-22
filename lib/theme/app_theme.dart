@@ -83,7 +83,7 @@ class AppTheme {
         backgroundColor: colorScheme.onPrimaryContainer,
         foregroundColor: colorScheme.primaryContainer,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: colorScheme.secondaryContainer,
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
@@ -115,7 +115,7 @@ class AppTheme {
         backgroundColor: colorScheme.onPrimaryContainer,
         foregroundColor: colorScheme.primaryContainer,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: colorScheme.secondaryContainer,
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),

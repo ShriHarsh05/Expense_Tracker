@@ -354,9 +354,14 @@ import '../models/expense.dart';
 import 'package:expensetracker/widgets/expenses_list/expenses_list.dart';
 import 'package:expensetracker/widgets/new_expense.dart';
 import 'package:expensetracker/widgets/summary/totalSummaryCard.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:expensetracker/widgets/greeting_header.dart';
+import 'package:expensetracker/services/sms_listener.dart';
+import 'package:expensetracker/services/expense_categorizer.dart';
+import 'package:expensetracker/services/smart_categorizer.dart';
+import 'package:expensetracker/widgets/category_prompt_dialog.dart';
+import 'package:expensetracker/widgets/learning_prompt_banner.dart';
 
 class Expenses extends StatefulWidget {
   final void Function(Color) onColorChanged;
@@ -368,6 +373,9 @@ class Expenses extends StatefulWidget {
 
 class _ExpensesState extends State<Expenses> {
   int _selectedPageIndex = 0;
+  bool _hasRunInitialSmsSync = false;
+  Expense? _currentLearningExpense; // 🧠 Current expense needing categorization
+  bool _showLearningBanner = false; // 🎯 Banner visibility flag
 
   Stream<List<Expense>> _getUserExpensesStream() {
     final user = AuthService.currentUser;
@@ -379,8 +387,192 @@ class _ExpensesState extends State<Expenses> {
         .collection('user_expenses')
         .orderBy('date', descending: true)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Expense.fromMap(doc.data())).toList());
+        .map((snapshot) {
+          final expenses = snapshot.docs.map((doc) => Expense.fromMap(doc.data())).toList();
+          
+          // Check for expenses that need user input (learning system)
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _checkForLearningPrompts(expenses);
+          });
+          
+          return expenses;
+        });
+  }
+
+  // 🧠 Check for expenses that need user categorization input
+  void _checkForLearningPrompts(List<Expense> expenses) {
+    final needsInput = expenses.where((e) => e.needsUserInput && e.isLearning).toList();
+    
+    if (needsInput.isNotEmpty && mounted) {
+      // Show banner for the first expense that needs input (non-intrusive)
+      final expense = needsInput.first;
+      if (_currentLearningExpense?.id != expense.id) {
+        setState(() {
+          _currentLearningExpense = expense;
+          _showLearningBanner = true;
+        });
+      }
+    } else {
+      // Hide banner if no expenses need input
+      if (_showLearningBanner) {
+        setState(() {
+          _showLearningBanner = false;
+          _currentLearningExpense = null;
+        });
+      }
+    }
+  }
+
+  // 🎯 Show category selection dialog for learning
+  void _showCategoryPrompt(Expense expense) {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Force user to make a choice
+      builder: (context) => CategoryPromptDialog(
+        amount: expense.amount,
+        date: expense.date,
+        smsBody: expense.originalSms ?? 'Transaction details not available',
+        suggestedCategory: expense.category,
+        onCategorySelected: (selectedCategory, customTitle) async {
+          await _handleUserCategorySelection(expense, selectedCategory, customTitle);
+        },
+      ),
+    );
+  }
+
+  // 📚 Handle user's category selection and learn from it
+  Future<void> _handleUserCategorySelection(
+    Expense expense, 
+    Category selectedCategory, 
+    String customTitle
+  ) async {
+    try {
+      // Hide the learning banner immediately
+      setState(() {
+        _showLearningBanner = false;
+        _currentLearningExpense = null;
+      });
+
+      // Learn from user's selection
+      await SmartCategorizer.learnFromUserCorrection(
+        smsBody: expense.originalSms ?? '',
+        amount: expense.amount,
+        time: expense.date,
+        userSelectedCategory: selectedCategory,
+        userTitle: customTitle.isNotEmpty ? customTitle : null,
+      );
+
+      // Update the expense in Firebase
+      await _updateExpenseAfterLearning(expense, selectedCategory, customTitle);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Learned! Similar transactions will be auto-categorized as ${selectedCategory.name}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+
+    } catch (e) {
+      print('❌ Error handling user category selection: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ Error saving your selection'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // 🔄 Update expense after user learning
+  Future<void> _updateExpenseAfterLearning(
+    Expense expense, 
+    Category selectedCategory, 
+    String customTitle
+  ) async {
+    final user = AuthService.currentUser;
+    if (user == null) return;
+
+    try {
+      // Find the document to update
+      final query = await FirebaseFirestore.instance
+          .collection('expenses')
+          .doc(user.uid)
+          .collection('user_expenses')
+          .where('id', isEqualTo: expense.id)
+          .get();
+
+      if (query.docs.isNotEmpty) {
+        final doc = query.docs.first;
+        
+        // Generate new title if custom title is provided
+        final timeStr = "${expense.date.hour.toString().padLeft(2, '0')}:${expense.date.minute.toString().padLeft(2, '0')}";
+        final finalTitle = customTitle.isNotEmpty ? customTitle : "${selectedCategory.name}: UPI $timeStr";
+        
+        await doc.reference.update({
+          'category': selectedCategory.name,
+          'title': finalTitle,
+          'needsUserInput': false,
+          'isLearning': false,
+        });
+      }
+    } catch (e) {
+      print('❌ Error updating expense after learning: $e');
+    }
+  }
+
+  // ⏭️ Handle skip action (mark as processed without learning)
+  Future<void> _handleSkipLearning(Expense expense) async {
+    // Hide the learning banner immediately
+    setState(() {
+      _showLearningBanner = false;
+      _currentLearningExpense = null;
+    });
+
+    final user = AuthService.currentUser;
+    if (user == null) return;
+
+    try {
+      // Find the document to update
+      final query = await FirebaseFirestore.instance
+          .collection('expenses')
+          .doc(user.uid)
+          .collection('user_expenses')
+          .where('id', isEqualTo: expense.id)
+          .get();
+
+      if (query.docs.isNotEmpty) {
+        final doc = query.docs.first;
+        
+        await doc.reference.update({
+          'needsUserInput': false,
+          'isLearning': false,
+          // Keep original category and title
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⏭️ Skipped learning for this transaction'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error skipping learning: $e');
+    }
+  }
+
+  // 🚫 Dismiss learning banner
+  void _dismissLearningBanner() {
+    setState(() {
+      _showLearningBanner = false;
+    });
   }
 
   Future<void> _uploadExpenseToFirestore(Expense expense) async {
@@ -495,6 +687,72 @@ class _ExpensesState extends State<Expenses> {
     );
   }
 
+  Future<void> _handleRefreshAll() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Refreshing: Scanning SMS and testing categorization...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print("❌ No user logged in for refresh");
+        return;
+      }
+      
+      print("🔄 Starting comprehensive refresh...");
+      print("🔍 Current user: ${user.uid}");
+      
+      // First: Scan SMS for new expenses
+      print("📱 Step 1: Scanning SMS messages...");
+      await syncSmsMessages();
+      
+      // Second: Test categorization system
+      print("🧪 Step 2: Testing categorization system...");
+      await ExpenseCategorizer.testCategorization();
+
+      // Third: Clean up old learning patterns (keep app lightweight)
+      print("🧹 Step 3: Cleaning up old learning patterns...");
+      await SmartCategorizer.cleanupOldPatterns();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Refresh completed! SMS scanned, categorization tested, and patterns cleaned.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      
+      print("✅ Comprehensive refresh completed successfully");
+    } catch (e) {
+      print("❌ Refresh error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Refresh failed: ${e.toString()}'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _runInitialSmsSync() async {
+    if (!_hasRunInitialSmsSync) {
+      _hasRunInitialSmsSync = true;
+      print("🔄 Running initial SMS sync after authentication...");
+      try {
+        await syncSmsMessages();
+        print("✅ Initial SMS sync completed");
+      } catch (e) {
+        print("❌ Initial SMS sync failed: $e");
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isTodayScreen = _selectedPageIndex == 0;
@@ -508,8 +766,9 @@ class _ExpensesState extends State<Expenses> {
             : [
                 if (_selectedPageIndex == 0 || _selectedPageIndex == 1)
                   IconButton(
-                    onPressed: _openAddExpenseOverlay,
-                    icon: const Icon(Icons.add),
+                    onPressed: _handleRefreshAll,
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'Refresh: Scan SMS & Test Categorization',
                   ),
               ],
       ),
@@ -520,6 +779,13 @@ class _ExpensesState extends State<Expenses> {
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
+                }
+
+                // Run initial SMS sync once user is authenticated and data is loaded
+                if (snapshot.hasData && !_hasRunInitialSmsSync) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _runInitialSmsSync();
+                  });
                 }
 
                 final allExpenses = snapshot.data ?? [];
@@ -533,47 +799,97 @@ class _ExpensesState extends State<Expenses> {
                     .toList();
 
                 if (isTodayScreen) {
-                  return todayExpenses.isEmpty
-                      ? const Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text('No expenses added yet!'),
-                              SizedBox(height: 10),
-                              Text('Start adding some by tapping "+" button.'),
-                            ],
-                          ),
-                        )
-                      : Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const GreetingHeader(),
-                              Totalsummarycard(expenses: todayExpenses),
-                              Chart(expenses: todayExpenses),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Today\'s Expenses',
-                                style: TextStyle(
-                                    fontSize: 16, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 6),
-                              Expanded(
-                                child: ExpensesList(
-                                  expenses: todayExpenses,
-                                  onRemoveExpense: _removeExpense,
-                                  onEditExpense: _editExpense,
+                  return Column(
+                    children: [
+                      // 🧠 Learning prompt banner (non-intrusive)
+                      if (_showLearningBanner && _currentLearningExpense != null)
+                        LearningPromptBanner(
+                          expense: _currentLearningExpense!,
+                          onFixPressed: () async {
+                            // Small delay to ensure banner animation completes
+                            await Future.delayed(const Duration(milliseconds: 100));
+                            if (mounted) {
+                              _showCategoryPrompt(_currentLearningExpense!);
+                            }
+                          },
+                          onSkipPressed: () {
+                            _handleSkipLearning(_currentLearningExpense!);
+                          },
+                          onDismiss: _dismissLearningBanner,
+                        ),
+                      
+                      // Main content
+                      Expanded(
+                        child: todayExpenses.isEmpty
+                            ? const Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text('No expenses added yet!'),
+                                    SizedBox(height: 10),
+                                    Text('Start adding some by tapping "+" button.'),
+                                  ],
+                                ),
+                              )
+                            : SingleChildScrollView(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const GreetingHeader(),
+                                    Totalsummarycard(expenses: todayExpenses),
+                                    Chart(expenses: todayExpenses),
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'Today\'s Expenses',
+                                      style: TextStyle(
+                                          fontSize: 16, fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    // Use a fixed height container for the expenses list
+                                    SizedBox(
+                                      height: 300, // Fixed height to prevent overflow
+                                      child: ExpensesList(
+                                        expenses: todayExpenses,
+                                        onRemoveExpense: _removeExpense,
+                                        onEditExpense: _editExpense,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
-                        );
+                      ),
+                    ],
+                  );
                 } else {
-                  return AllExpensesScreen(
-                    allExpense: allExpenses,
-                    onRemoveExpense: _removeExpense,
-                    onEditExpense: _editExpense,
+                  return Column(
+                    children: [
+                      // 🧠 Learning prompt banner (non-intrusive)
+                      if (_showLearningBanner && _currentLearningExpense != null)
+                        LearningPromptBanner(
+                          expense: _currentLearningExpense!,
+                          onFixPressed: () async {
+                            // Small delay to ensure banner animation completes
+                            await Future.delayed(const Duration(milliseconds: 100));
+                            if (mounted) {
+                              _showCategoryPrompt(_currentLearningExpense!);
+                            }
+                          },
+                          onSkipPressed: () {
+                            _handleSkipLearning(_currentLearningExpense!);
+                          },
+                          onDismiss: _dismissLearningBanner,
+                        ),
+                      
+                      // All expenses content
+                      Expanded(
+                        child: AllExpensesScreen(
+                          allExpense: allExpenses,
+                          onRemoveExpense: _removeExpense,
+                          onEditExpense: _editExpense,
+                        ),
+                      ),
+                    ],
                   );
                 }
               },

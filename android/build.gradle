@@ -8,7 +8,7 @@ buildscript {
     dependencies {
         // Ensure your Android Gradle Plugin version is also up-to-date.
         // For Flutter 3.x, this is typically 7.x.x or 8.x.x
-        classpath 'com.android.tools.build:gradle:8.1.4' // Or whatever your current AGP version is (e.g., 7.3.0, 7.4.2, 8.1.4, etc.)
+        classpath 'com.android.tools.build:gradle:8.3.2' // Or whatever your current AGP version is (e.g., 7.3.0, 7.4.2, 8.1.4, etc.)
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }

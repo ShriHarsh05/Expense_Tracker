@@ -31,18 +31,30 @@ class Categorysummarycard extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        entry.key,
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w500),
-                      ),
-                      Text(
-                        '₹${entry.value.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          entry.key,
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w500),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
-                      )
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        flex: 1,
+                        child: Text(
+                          '₹${entry.value.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          textAlign: TextAlign.end,
+                        ),
+                      ),
                     ],
                   ),
                 );

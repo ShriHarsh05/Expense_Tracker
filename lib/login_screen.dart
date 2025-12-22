@@ -115,13 +115,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         height: 24.0,
                         width: 24.0,
                       ),
-                label: Flexible(
-                  child: Text(
-                    _isSigningIn ? 'Signing In...' : 'Sign in with Google',
-                    style: const TextStyle(fontSize: 18),
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                  ),
+                label: Text(
+                  _isSigningIn ? 'Signing In...' : 'Sign in with Google',
+                  style: const TextStyle(fontSize: 18),
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
                 ),
                 style: ElevatedButton.styleFrom(
                   padding:

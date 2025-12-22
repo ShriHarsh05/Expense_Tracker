@@ -2,18 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
 import 'package:expensetracker/theme/app_theme.dart';
 import 'package:expensetracker/widgets/expenses.dart';
 import 'package:expensetracker/controller/theme_controller.dart';
 import 'package:expensetracker/services/auth_service.dart';
 import 'package:expensetracker/login_screen.dart';
-import 'package:expensetracker/services/sms_listener.dart';
+
+import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(); // If you have initial configs
-  await initializeSmsListener(); // Your SMS listener
+  
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    // Firebase already initialized, continue
+    print("Firebase already initialized: $e");
+  }
+  
+  // Don't scan SMS here - user might not be authenticated yet
+  // SMS scanning will happen after login in the Expenses widget
   final user = FirebaseAuth.instance.currentUser;
   if (user != null) {
     final doc = await FirebaseFirestore.instance
@@ -36,8 +46,6 @@ class ExpenseTrackerApp extends StatefulWidget {
 }
 
 class _ExpenseTrackerAppState extends State<ExpenseTrackerApp> {
-  Color? _initialColor;
-
   @override
   void initState() {
     super.initState();
