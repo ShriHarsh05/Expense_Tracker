@@ -31,8 +31,8 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace = "com.example.expensetracker"
-    compileSdk = 34
+    namespace = "com.aiexpensetracker.smart"
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -44,9 +44,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.expensetracker"
+        applicationId = "com.aiexpensetracker.smart"
         minSdkVersion flutter.minSdkVersion
-        targetSdkVersion 34
+        targetSdkVersion 35
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
     }

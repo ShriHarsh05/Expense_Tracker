@@ -118,9 +118,35 @@ class ExpenseCategorizer {
     return null; // Not found in Indian database
   }
 
-  // 💳 Helper: Extract merchant name from wallet SMS (MobiKwik, Paytm, etc.)
+  // 💳 Helper: Extract merchant name from wallet SMS and credit card transactions
   static String? _extractWalletMerchant(String body) {
-    // 🔍 **STEP 1: Check for merchant-specific patterns first**
+    // 🔍 **STEP 1: Check for credit card transaction patterns**
+    final creditCardPatterns = [
+      // Axis Bank credit card pattern: "Spent INR 4006.35Axis Bank Card no. XX542823-12-25 13:18:48 ISTRBL BANK LT"
+      RegExp(r'spent\s+inr\s+[\d,]+\.?\d*\s*axis\s+bank\s+card\s+no\.\s+\w+\s*-?\s*\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+(\w+(?:\s+\w+)*)', caseSensitive: false),
+      
+      // Generic credit card patterns
+      RegExp(r'(?:spent|charged|debited)\s+(?:inr|rs\.?)\s*[\d,]+\.?\d*.*?(?:at|from)\s+([a-zA-Z][a-zA-Z0-9\s]{2,20})', caseSensitive: false),
+      RegExp(r'transaction\s+(?:at|on)\s+([a-zA-Z][a-zA-Z0-9\s]{2,20})', caseSensitive: false),
+      RegExp(r'card\s+no\.?\s+\w+.*?(?:at|from)\s+([a-zA-Z][a-zA-Z0-9\s]{2,20})', caseSensitive: false),
+    ];
+    
+    for (RegExp pattern in creditCardPatterns) {
+      Match? match = pattern.firstMatch(body);
+      if (match != null && match.group(1) != null) {
+        String merchantName = match.group(1)!.trim();
+        
+        // Clean up merchant name (remove common suffixes)
+        merchantName = merchantName.replaceAll(RegExp(r'\s+(bank|ltd|limited|pvt|private|inc|corp)$', caseSensitive: false), '');
+        
+        if (_isValidMerchantName(merchantName)) {
+          print("💳 Credit card merchant extracted: '$merchantName'");
+          return merchantName.toLowerCase();
+        }
+      }
+    }
+    
+    // 🔍 **STEP 2: Check for wallet-specific patterns**
     final patterns = [
       'paid to ',
       'payment to ',
@@ -157,7 +183,7 @@ class ExpenseCategorizer {
       }
     }
     
-    // 🔍 **STEP 2: Check for quoted merchant names**
+    // 🔍 **STEP 3: Check for quoted merchant names**
     RegExp quotedPattern = RegExp(r'"([^"]+)"');
     Match? match = quotedPattern.firstMatch(body);
     if (match != null) {
@@ -168,7 +194,7 @@ class ExpenseCategorizer {
       }
     }
     
-    // 🔍 **STEP 3: Handle wallet debit notifications without merchant info**
+    // 🔍 **STEP 4: Handle wallet debit notifications without merchant info**
     // For SMS like "Rs.60.0 has been debited from your MobiKwik wallet"
     if (_isWalletDebitNotification(body)) {
       print("💳 Wallet debit notification detected (no merchant info)");
@@ -178,7 +204,7 @@ class ExpenseCategorizer {
     return null;
   }
 
-  // 💳 Helper: Check if SMS is a wallet debit notification without merchant info
+  // 💳 Helper: Check if SMS is a wallet debit notification or credit card transaction without merchant info
   static bool _isWalletDebitNotification(String body) {
     final walletDebitPatterns = [
       'has been debited from your mobikwik wallet',
@@ -187,6 +213,12 @@ class ExpenseCategorizer {
       'debited from your wallet',
       'wallet balance debited',
       'amount debited from wallet',
+      // Credit card patterns without clear merchant info
+      'card no.',
+      'credit card',
+      'debit card',
+      'avl limit',
+      'available limit',
     ];
     
     return walletDebitPatterns.any((pattern) => body.contains(pattern));
