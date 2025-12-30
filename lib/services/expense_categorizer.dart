@@ -4,9 +4,9 @@ import '../models/expense.dart';
 import '../config/api_config.dart';
 
 /// 🆓 FREE Three-Layer Expense Categorization Service (Wallet-Aware)
-/// Layer 0: Enhanced Indian Merchant Database - 95% accuracy for Indian merchants
-/// Layer 1: Merchant Database API (Foursquare) - 95% accuracy when found
-/// Layer 2: Enhanced Keyword Scoring - 85% accuracy fallback
+/// Layer 0: Enhanced Indian Merchant Database - High accuracy for Indian merchants
+/// Layer 1: Merchant Database API (Foursquare) - International merchant fallback
+/// Layer 2: Enhanced Keyword Scoring - Comprehensive fallback categorization
 class ExpenseCategorizer {
   
   // 🇮🇳 **LAYER 0: Enhanced Indian Merchant Database (Wallet-Aware)**
@@ -122,8 +122,11 @@ class ExpenseCategorizer {
   static String? _extractWalletMerchant(String body) {
     // 🔍 **STEP 1: Check for credit card transaction patterns**
     final creditCardPatterns = [
-      // Axis Bank credit card pattern: "Spent INR 4006.35Axis Bank Card no. XX542823-12-25 13:18:48 ISTRBL BANK LT"
-      RegExp(r'spent\s+inr\s+[\d,]+\.?\d*\s*axis\s+bank\s+card\s+no\.\s+\w+\s*-?\s*\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+(\w+(?:\s+\w+)*)', caseSensitive: false),
+      // Enhanced Axis Bank credit card pattern: "Spent INR 4006.35Axis Bank Card no. XX542823-12-25 13:18:48 ISTRBL BANK LT"
+      RegExp(r'spent\s+inr\s+[\d,]+\.?\d*\s*axis\s+bank\s+card\s+no\.\s+\w+\s*-?\s*\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+([A-Z][A-Z0-9\s]{2,25}?)(?:\s*avl\s+limit|$)', caseSensitive: false),
+      
+      // Generic Axis Bank pattern (fallback)
+      RegExp(r'axis\s+bank\s+card.*?\d{2}:\d{2}:\d{2}\s+([A-Z][A-Z0-9\s]{2,25}?)(?:\s*avl\s+limit|not\s+you|$)', caseSensitive: false),
       
       // Generic credit card patterns
       RegExp(r'(?:spent|charged|debited)\s+(?:inr|rs\.?)\s*[\d,]+\.?\d*.*?(?:at|from)\s+([a-zA-Z][a-zA-Z0-9\s]{2,20})', caseSensitive: false),
@@ -288,24 +291,27 @@ class ExpenseCategorizer {
     
     // Filter out common non-merchant words
     final invalidWords = [
-      'upi', 'payment', 'transaction', 'transfer', 'wallet', 'bank', 'account',
+      'upi', 'payment', 'transaction', 'transfer', 'wallet', 'account',
       'mobile', 'number', 'phone', 'via', 'using', 'through', 'from', 'to',
       'rs', 'inr', 'rupees', 'amount', 'balance', 'available', 'successful',
       'failed', 'pending', 'completed', 'debited', 'credited', 'charged',
-      'your', 'you', 'the', 'and', 'or', 'for', 'with', 'on', 'at', 'in'
+      'your', 'you', 'the', 'and', 'or', 'for', 'with', 'on', 'at', 'in',
+      'avl', 'limit', 'not'
     ];
     
     // Check if name contains only invalid words
     final words = cleanName.split(' ');
     final validWords = words.where((word) => 
-      word.length >= 3 && !invalidWords.contains(word)
+      word.length >= 2 && !invalidWords.contains(word)
     ).toList();
     
     // Must have at least one valid word and reasonable length
+    // Allow bank codes like "ISTRBL BANK LT"
     return validWords.isNotEmpty && 
-           cleanName.length >= 3 && 
-           cleanName.length <= 25 &&
-           !RegExp(r'^\d+$').hasMatch(cleanName); // Not just numbers
+           cleanName.length >= 2 && 
+           cleanName.length <= 30 &&
+           !RegExp(r'^\d+$').hasMatch(cleanName) && // Not just numbers
+           !RegExp(r'^[^a-zA-Z]*$').hasMatch(cleanName); // Must contain letters
   }
 
   // 🏪 **LAYER 1: Merchant Database API (Foursquare Fallback)**
@@ -332,7 +338,7 @@ class ExpenseCategorizer {
     }
   }
   
-  // 🔍 **LAYER 2: Enhanced Keyword Scoring (Fallback)**
+  // 🔍 **LAYER 2: Enhanced Keyword Scoring (Comprehensive Fallback)**
   static Category categorizeByKeywordScoring(String smsBody, double amount) {
     final body = smsBody.toLowerCase();
     final scores = <Category, double>{};
@@ -361,7 +367,7 @@ class ExpenseCategorizer {
     // Layer 0: Try Indian merchant database first (instant, high accuracy)
     final indianCategory = categorizeByIndianMerchants(smsBody);
     if (indianCategory != null) {
-      return indianCategory; // Very high confidence Indian merchant match
+      return indianCategory; // High confidence Indian merchant match
     }
     
     // Layer 1: Try Foursquare API for international/unknown merchants

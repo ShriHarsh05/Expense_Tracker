@@ -1,0 +1,3 @@
+# Requirements for generating system architecture diagram
+matplotlib>=3.5.0
+numpy>=1.21.0

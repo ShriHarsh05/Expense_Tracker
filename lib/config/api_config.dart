@@ -7,7 +7,7 @@ class ApiConfig {
   
   // 🏪 Get your free Foursquare API key from: https://developer.foursquare.com/
   // Free tier includes: 100,000 requests per month
-  static const String foursquareApiKey = 'YOUR_FOURSQUARE_API_KEY';
+  static const String foursquareApiKey = 'DNH0XJYFRKEMRQMWK4P0KBOAJMDUYE4D4YGCL2LLSDUWF0ZD';
   
   // 📝 Instructions to get free Foursquare API key:
   // 1. Go to https://developer.foursquare.com/
