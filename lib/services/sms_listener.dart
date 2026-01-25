@@ -73,7 +73,28 @@ Future<void> _processSmsMessage(SmsMessage message) async {
       return;
     }
 
-    // ✅ Keywords to detect potential expenses (including credit card transactions)
+    // ✅ Keywords to detect potential expenses (including wallet transactions)
+    // First check for promotional/non-expense patterns to exclude
+    final isPromoOrNonExpense = body.contains('get cashback') ||
+        body.contains('download the app') ||
+        body.contains('limited time offer') ||
+        body.contains('congratulations') ||
+        body.contains('you have won') ||
+        body.contains('click here') ||
+        body.contains('visit our website') ||
+        body.contains('terms and conditions') ||
+        body.contains('offer valid till') ||
+        body.contains('verification is pending') ||
+        body.contains('complete kyc') ||
+        body.contains('update your') ||
+        body.contains('activate your') ||
+        (body.contains('cashback') && !body.contains('cashback received')) ||
+        (body.contains('offer') && !body.contains('transaction'));
+    
+    if (isPromoOrNonExpense) {
+      return; // Skip promotional/service messages
+    }
+    
     final isExpense = body.contains('debited') ||
         body.contains('purchase') ||
         body.contains('spent') ||
@@ -96,8 +117,46 @@ Future<void> _processSmsMessage(SmsMessage message) async {
         body.contains('icici bank') ||
         body.contains('sbi card') ||
         body.contains('kotak bank') ||
-        // Amount patterns for credit cards
-        (body.contains('inr') && (body.contains('limit') || body.contains('card')));
+        body.contains('union bank') ||
+        body.contains('unionbank') ||
+        body.contains('ubi') ||
+        // Additional expense keywords
+        body.contains('withdraw') ||
+        body.contains('payment') ||
+        body.contains('transfer') ||
+        body.contains('pos') ||
+        body.contains('atm') ||
+        body.contains('online') ||
+        body.contains('mobile banking') ||
+        body.contains('net banking') ||
+        // Wallet-specific expense patterns
+        body.contains('paytm wallet') ||
+        body.contains('phonepe wallet') ||
+        body.contains('gpay wallet') ||
+        body.contains('amazon pay wallet') ||
+        body.contains('mobikwik wallet') ||
+        body.contains('freecharge wallet') ||
+        body.contains('ola money') ||
+        body.contains('jio money') ||
+        body.contains('airtel money') ||
+        body.contains('wallet payment') ||
+        body.contains('paid using') ||
+        body.contains('payment from wallet') ||
+        body.contains('wallet to bank') ||
+        body.contains('money debited') ||
+        body.contains('amount paid') ||
+        body.contains('transaction successful') ||
+        body.contains('payment successful') ||
+        // UPI and digital payment patterns
+        body.contains('upi transaction') ||
+        body.contains('upi payment') ||
+        body.contains('paid via upi') ||
+        body.contains('bhim upi') ||
+        // Amount patterns for credit cards and wallets
+        (body.contains('inr') && (body.contains('limit') || body.contains('card') || body.contains('wallet'))) ||
+        // Generic transaction patterns
+        (body.contains('rs') && (body.contains('debited') || body.contains('credited') || body.contains('paid'))) ||
+        (body.contains('transaction') && (body.contains('successful') || body.contains('completed')));
 
     if (!isExpense) {
       return; // Silent return to reduce log noise
@@ -105,16 +164,16 @@ Future<void> _processSmsMessage(SmsMessage message) async {
 
     // ✅ Enhanced regex to extract amount (supports INR format and credit card patterns)
     final amountRegex = RegExp(
-      r'(?:rs[:\.]?|inr)\s*([\d,]+(?:\.\d{1,2})?)|(?:spent|charged|debited)\s*(?:rs[:\.]?|inr)?\s*([\d,]+(?:\.\d{1,2})?)',
+      r'(?:rs[:\.]?\s*|inr\s*|₹\s*)([\d,]+(?:\.\d{1,2})?)|(?:spent|charged|debited|withdrawn|paid)\s*(?:rs[:\.]?\s*|inr\s*|₹\s*)?([\d,]+(?:\.\d{1,2})?)|(?:amount|amt)\s*(?:rs[:\.]?\s*|inr\s*|₹\s*)?([\d,]+(?:\.\d{1,2})?)',
       caseSensitive: false,
     );
 
     final match = amountRegex.firstMatch(body);
 
     if (match == null) {
-      // Try alternative patterns for credit card SMS
+      // Try alternative patterns for credit card SMS and Union Bank formats
       final altRegex = RegExp(
-        r'([\d,]+\.\d{2})\s*(?:inr|rs)?',
+        r'([\d,]+\.\d{2})\s*(?:inr|rs|₹)?|(?:balance|bal)\s*(?:rs|inr|₹)?\s*([\d,]+(?:\.\d{2})?)|(?:your\s+account|a\/c)\s*.*?([\d,]+(?:\.\d{2})?)',
         caseSensitive: false,
       );
       final altMatch = altRegex.firstMatch(body);
@@ -124,7 +183,7 @@ Future<void> _processSmsMessage(SmsMessage message) async {
         return;
       }
       
-      final amountStr = altMatch.group(1)?.replaceAll(',', '') ?? '0.0';
+      final amountStr = (altMatch.group(1) ?? altMatch.group(2) ?? altMatch.group(3))?.replaceAll(',', '') ?? '0.0';
       final amount = double.tryParse(amountStr);
 
       if (amount == null || amount <= 0) {
@@ -136,7 +195,7 @@ Future<void> _processSmsMessage(SmsMessage message) async {
     }
 
     // Process the matched amount
-    final amountStr = (match.group(1) ?? match.group(2))?.replaceAll(',', '') ?? '0.0';
+    final amountStr = (match.group(1) ?? match.group(2) ?? match.group(3))?.replaceAll(',', '') ?? '0.0';
     final amount = double.tryParse(amountStr);
 
     if (amount == null || amount <= 0) {
@@ -445,6 +504,7 @@ Future<void> addExpenseToStorage({
 bool _isLegitimateFinancialSender(String sender, String body) {
   final senderLower = sender.toLowerCase();
   final bodyLower = body.toLowerCase();
+  final senderUpper = sender.toUpperCase();
   
   // 🚫 **PRIMARY REJECTION RULES (Banking Industry Standards)**
   
@@ -510,11 +570,27 @@ bool _isLegitimateFinancialSender(String sender, String body) {
     }
   }
   
-  // ✅ **ACCEPTANCE CRITERIA (What banks actually use)**
+  // ✅ **TRAI 2025 SUFFIX-BASED VALIDATION (Primary Method)**
+  // Check for TRAI compliant suffixes: -S (Service), -T (Transactional), -P (Promotional), -G (Government)
+  if (RegExp(r'-[STPG]$').hasMatch(senderUpper)) {
+    if (_hasAuthenticBankingContent(bodyLower)) {
+      final suffix = senderUpper.substring(senderUpper.length - 1);
+      final suffixType = suffix == 'S' ? 'Service' : 
+                       suffix == 'T' ? 'Transactional' : 
+                       suffix == 'P' ? 'Promotional' : 'Government';
+      print("✅ ACCEPTED: TRAI compliant sender ($suffixType): $sender");
+      return true;
+    } else {
+      print("🚫 REJECTED: TRAI compliant sender but no banking content: $sender");
+      return false;
+    }
+  }
+  
+  // ✅ **LEGACY FORMAT SUPPORT (Pre-May 2025)**
+  // For backward compatibility with older SMS formats
   
   // ✅ ACCEPT: 4-6 digit short codes (standard banking practice)
   if (RegExp(r'^\d{4,6}$').hasMatch(sender)) {
-    // Additional validation: must have financial content
     if (_hasAuthenticBankingContent(bodyLower)) {
       print("✅ ACCEPTED: Bank short code with financial content: $sender");
       return true;
@@ -525,9 +601,9 @@ bool _isLegitimateFinancialSender(String sender, String body) {
   }
   
   // ✅ ACCEPT: 5-6 character alphanumeric codes (Indian bank standard)
-  if (RegExp(r'^[A-Z0-9]{5,6}$').hasMatch(sender.toUpperCase())) {
+  if (RegExp(r'^[A-Z0-9]{5,6}$').hasMatch(senderUpper)) {
     if (_hasAuthenticBankingContent(bodyLower)) {
-      print("✅ ACCEPTED: Bank code with financial content: $sender");
+      print("✅ ACCEPTED: Legacy bank code with financial content: $sender");
       return true;
     } else {
       print("🚫 REJECTED: Bank code but no banking content: $sender");
@@ -535,16 +611,38 @@ bool _isLegitimateFinancialSender(String sender, String body) {
     }
   }
   
-  // ✅ ACCEPT: Extended wallet/merchant codes (like VM-MOBIKW-SJK-SWIGGY-S)
-  if (RegExp(r'^[A-Z0-9\-]{10,25}$').hasMatch(sender.toUpperCase())) {
+  // ✅ ACCEPT: Extended bank codes with hyphens (legacy format like JK-UNIONB)
+  if (RegExp(r'^[A-Z0-9\-]{7,25}$').hasMatch(senderUpper)) {
+    // Check if it contains known banking patterns
+    final bankingPatterns = [
+      'BANK', 'BNK', 'CARD', 'UNION', 'HDFC', 'ICICI', 'AXIS', 'SBI',
+      'KOTAK', 'YES', 'PNB', 'CAN', 'IOB', 'SYND', 'AND', 'BOB',
+      'UBI', 'MAHA', 'VIJ', 'AMEX', 'CITI', 'STAN', 'RBL', 'IND',
+      'MOBIKW', 'PAYTM', 'PHONEPE', 'GPAY', 'AMAZONP', 'FREECHARGE'
+    ];
+    
+    for (String pattern in bankingPatterns) {
+      if (senderUpper.contains(pattern)) {
+        if (_hasAuthenticBankingContent(bodyLower)) {
+          print("✅ ACCEPTED: Legacy extended bank code with financial content: $sender");
+          return true;
+        } else {
+          print("🚫 REJECTED: Bank code but no banking content: $sender");
+          return false;
+        }
+      }
+    }
+  }
+  
+  // ✅ ACCEPT: Extended wallet/merchant codes (legacy format)
+  if (RegExp(r'^[A-Z0-9\-]{10,30}$').hasMatch(senderUpper)) {
     // Check if it contains known wallet/payment patterns
     final walletPatterns = ['MOBIKW', 'PAYTM', 'PHONEPE', 'GPAY', 'AMAZONP', 'FREECHARGE'];
-    final senderUpper = sender.toUpperCase();
     
     for (String pattern in walletPatterns) {
       if (senderUpper.contains(pattern)) {
         if (_hasAuthenticBankingContent(bodyLower)) {
-          print("✅ ACCEPTED: Extended wallet code with financial content: $sender");
+          print("✅ ACCEPTED: Legacy wallet code with financial content: $sender");
           return true;
         } else {
           print("🚫 REJECTED: Wallet code but no banking content: $sender");
@@ -554,10 +652,10 @@ bool _isLegitimateFinancialSender(String sender, String body) {
     }
   }
   
-  // ✅ ACCEPT: Hyphenated bank/merchant codes (VM-MOBIKW format)
-  if (RegExp(r'^[A-Z0-9]+(-[A-Z0-9]+)+$').hasMatch(sender.toUpperCase())) {
+  // ✅ ACCEPT: Hyphenated bank/merchant codes (legacy format)
+  if (RegExp(r'^[A-Z0-9]+(-[A-Z0-9]+)+$').hasMatch(senderUpper)) {
     if (_hasAuthenticBankingContent(bodyLower)) {
-      print("✅ ACCEPTED: Hyphenated merchant code with financial content: $sender");
+      print("✅ ACCEPTED: Legacy hyphenated code with financial content: $sender");
       return true;
     } else {
       print("🚫 REJECTED: Hyphenated code but no banking content: $sender");
@@ -571,7 +669,7 @@ bool _isLegitimateFinancialSender(String sender, String body) {
   return false;
 }
 
-// Enhanced banking content validation (stricter than before)
+// Enhanced banking content validation (includes wallet transactions)
 bool _hasAuthenticBankingContent(String body) {
   // 🏦 **STRONG BANKING INDICATORS** (must have at least one)
   final strongBankingIndicators = [
@@ -580,21 +678,47 @@ bool _hasAuthenticBankingContent(String body) {
     'ifsc code', 'branch code', 'customer id', 'debit card',
     'credit card', 'net banking', 'mobile banking',
     'not you? sms block', 'call customer care', 'visit branch',
-    'terms and conditions apply', 'charges applicable'
+    'terms and conditions apply', 'charges applicable',
+    // Union Bank specific patterns
+    'union bank', 'unionbank', 'ubi', 'union bank of india',
+    // Common banking transaction phrases
+    'debited from your', 'credited to your', 'balance is',
+    'transaction successful', 'transaction failed', 'otp',
+    'mini statement', 'account statement', 'cheque book',
+    'atm withdrawal', 'pos transaction', 'online transfer',
+    'neft', 'rtgs', 'imps', 'upi transaction',
+    
+    // 💳 **WALLET-SPECIFIC INDICATORS**
+    'wallet balance', 'wallet debited', 'wallet credited',
+    'paytm wallet', 'phonepe wallet', 'gpay wallet', 'amazon pay wallet',
+    'mobikwik wallet', 'freecharge wallet', 'ola money', 'jio money',
+    'airtel money', 'bharti wallet', 'wallet to bank', 'bank to wallet',
+    'wallet recharge', 'wallet payment', 'wallet transfer',
+    'add money to wallet', 'money added to wallet',
+    'wallet balance low', 'wallet transaction',
+    'paid using wallet', 'payment from wallet',
+    'wallet cashback', 'wallet refund'
   ];
   
   for (String indicator in strongBankingIndicators) {
     if (body.contains(indicator)) {
-      return true; // Strong banking indicator found
+      return true; // Strong banking/wallet indicator found
     }
   }
   
   // 💰 **FINANCIAL TRANSACTION PATTERNS** (must match specific format)
-  // Pattern: Amount + Banking action + Account/Card reference
+  // Pattern: Amount + Banking/Wallet action + Account/Card/Wallet reference
   final transactionPatterns = [
     RegExp(r'(rs|inr)\s*[\d,]+\.?\d*\s*(debited|credited|spent|charged).*?(account|card|wallet)', caseSensitive: false),
-    RegExp(r'(debited|credited|spent|charged)\s*(rs|inr)\s*[\d,]+\.?\d*.*?(from|to).*?(account|card)', caseSensitive: false),
+    RegExp(r'(debited|credited|spent|charged)\s*(rs|inr)\s*[\d,]+\.?\d*.*?(from|to).*?(account|card|wallet)', caseSensitive: false),
     RegExp(r'transaction.*?(rs|inr)\s*[\d,]+\.?\d*.*?(successful|completed|failed)', caseSensitive: false),
+    // Union Bank specific transaction patterns
+    RegExp(r'(rs|inr)\s*[\d,]+\.?\d*.*?(debited|credited).*?(union|ubi)', caseSensitive: false),
+    RegExp(r'your.*?(account|card|wallet).*?(rs|inr)\s*[\d,]+\.?\d*', caseSensitive: false),
+    // Wallet-specific patterns
+    RegExp(r'(rs|inr)\s*[\d,]+\.?\d*.*?(debited|credited|added|paid).*?wallet', caseSensitive: false),
+    RegExp(r'wallet.*?(rs|inr)\s*[\d,]+\.?\d*.*?(debited|credited|balance)', caseSensitive: false),
+    RegExp(r'paid.*?(rs|inr)\s*[\d,]+\.?\d*.*?(using|via|through).*?(paytm|phonepe|gpay|wallet)', caseSensitive: false),
   ];
   
   for (RegExp pattern in transactionPatterns) {
@@ -603,11 +727,19 @@ bool _hasAuthenticBankingContent(String body) {
     }
   }
   
-  // 🔢 **BANKING KEYWORDS COUNT** (fallback - need multiple keywords)
+  // 🔢 **BANKING/WALLET KEYWORDS COUNT** (fallback - need multiple keywords)
   final bankingKeywords = [
     'account', 'balance', 'transaction', 'debited', 'credited',
     'bank', 'card', 'upi', 'wallet', 'payment', 'transfer',
-    'limit', 'statement', 'otp', 'pin', 'atm', 'pos'
+    'limit', 'statement', 'otp', 'pin', 'atm', 'pos',
+    // Additional banking terms
+    'withdraw', 'deposit', 'cheque', 'draft', 'loan',
+    'emi', 'interest', 'charges', 'fee', 'branch',
+    'customer', 'service', 'helpline', 'support',
+    // Wallet-specific keywords
+    'paytm', 'phonepe', 'gpay', 'amazon pay', 'mobikwik',
+    'freecharge', 'ola money', 'jio money', 'airtel money',
+    'recharge', 'cashback', 'refund', 'topup', 'add money'
   ];
   
   int keywordCount = 0;
@@ -617,10 +749,10 @@ bool _hasAuthenticBankingContent(String body) {
     }
   }
   
-  // Need at least 3 banking keywords for unknown patterns
-  if (keywordCount >= 3) {
+  // Need at least 2 banking/wallet keywords for unknown patterns
+  if (keywordCount >= 2) {
     return true;
   }
   
-  return false; // Not enough banking indicators
+  return false; // Not enough banking/wallet indicators
 }
