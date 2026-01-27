@@ -73,7 +73,28 @@ Future<void> _processSmsMessage(SmsMessage message) async {
       return;
     }
 
-    // ✅ Keywords to detect potential expenses (including wallet transactions)
+    // ❌ **EXPLICIT CREDIT/INCOME EXCLUSION** - Never process income transactions as expenses
+    if (body.contains('credited to your') || 
+        body.contains('amount credited') ||
+        body.contains('rs') && body.contains('credited') && !body.contains('debited') ||
+        body.contains('cashback') && body.contains('credited') ||
+        body.contains('refund') && body.contains('credited') ||
+        body.contains('salary') && body.contains('credited') ||
+        body.contains('interest') && body.contains('credited') ||
+        body.contains('withdrawn to your') ||
+        body.contains('amount withdrawn to') ||
+        body.contains('withdrawal to your') ||
+        body.contains('cash withdrawn to') ||
+        body.contains('money withdrawn to') ||
+        body.contains('deposited to your') ||
+        body.contains('amount deposited') ||
+        body.contains('transfer to your account') ||
+        body.contains('received in your account')) {
+      // print("🚫 Skipped credit/income transaction: $body");
+      return; // Skip all credit/income transactions
+    }
+
+    // ✅ Keywords to detect potential expenses (DEBIT/EXPENSE ONLY)
     // First check for promotional/non-expense patterns to exclude
     final isPromoOrNonExpense = body.contains('get cashback') ||
         body.contains('download the app') ||
@@ -154,8 +175,8 @@ Future<void> _processSmsMessage(SmsMessage message) async {
         body.contains('bhim upi') ||
         // Amount patterns for credit cards and wallets
         (body.contains('inr') && (body.contains('limit') || body.contains('card') || body.contains('wallet'))) ||
-        // Generic transaction patterns
-        (body.contains('rs') && (body.contains('debited') || body.contains('credited') || body.contains('paid'))) ||
+        // Generic transaction patterns (ONLY debit/expense patterns)
+        (body.contains('rs') && (body.contains('debited') || body.contains('paid'))) ||
         (body.contains('transaction') && (body.contains('successful') || body.contains('completed')));
 
     if (!isExpense) {
